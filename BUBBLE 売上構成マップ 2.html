@@ -1,0 +1,1951 @@
+<html lang="ja" foxified=""><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUBBLE 売上構成マップ</title>
+<style>
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d1117;
+  font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+  overflow: hidden;
+  user-select: none;
+  height: 100vh; width: 100vw;
+}
+
+/* ===== TOOLBAR ===== */
+#toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  z-index: 1000;
+  overflow-x: auto;
+}
+#toolbar .tb-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e6edf3;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.tb-sep { width: 1px; height: 28px; background: #30363d; margin: 0 3px; flex-shrink: 0; }
+.tb-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+}
+.tb-btn:hover { background: #30363d; border-color: #8b949e; color: #e6edf3; }
+.tb-btn.danger:hover { background: #3d1a1a; border-color: #f85149; color: #f85149; }
+.tb-btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.tb-btn.primary:hover { background: #2ea043; }
+.tb-btn.active { background: #1f3a5f; border-color: #58a6ff; color: #58a6ff; }
+.tb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tb-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+#hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: #6e7681;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ===== CANVAS WRAPPER ===== */
+#viewport {
+  position: fixed;
+  top: 48px; left: 0; right: 0; bottom: 0;
+  overflow: hidden;
+  cursor: grab;
+}
+#viewport.panning { cursor: grabbing; }
+#world {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+}
+#canvas { position: relative; }
+#svg-layer {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ===== NODES ===== */
+.node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: pointer;
+  transition: box-shadow .15s, transform .1s;
+}
+.node:hover { z-index: 20 !important; }
+.node.selected {
+  outline: 2px solid #58a6ff !important;
+  outline-offset: 2px;
+  z-index: 30 !important;
+}
+.node.collapsed-node { opacity: 0.75; }
+.node-root {
+  border-radius: 50%;
+  color: #fff;
+  font-size: 16px;
+  flex-direction: column;
+  line-height: 1.5;
+  z-index: 5;
+}
+.node-l1 { border-radius: 30px; font-size: 13px; color: #fff; z-index: 4; }
+.node-l2 { border-radius: 20px; font-size: 11.5px; color: #fff; font-weight: 600; z-index: 3; }
+.node-l3 { border-radius: 8px; font-size: 10.5px; color: #ddd; font-weight: 500; z-index: 2; }
+
+/* collapse toggle button on node */
+.collapse-btn {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #21262d;
+  border: 1.5px solid #8b949e;
+  color: #8b949e;
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 50;
+  transition: background .15s, color .15s;
+  user-select: none;
+}
+.collapse-btn:hover { background: #30363d; color: #e6edf3; border-color: #e6edf3; }
+
+/* note indicator */
+.note-dot {
+  position: absolute;
+  top: -5px; right: -5px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #f0b429;
+  border: 1.5px solid #0d1117;
+  z-index: 40;
+  cursor: pointer;
+}
+
+/* ===== CONTEXT MENU ===== */
+#ctx-menu {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 6px 0;
+  min-width: 190px;
+  z-index: 2000;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  display: none;
+}
+#ctx-menu.show { display: block; }
+.ctx-item {
+  padding: 7px 16px;
+  font-size: 12.5px;
+  color: #c9d1d9;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.ctx-item:hover { background: #21262d; color: #e6edf3; }
+.ctx-item.danger { color: #f85149; }
+.ctx-item.danger:hover { background: #3d1a1a; }
+.ctx-sep { height: 1px; background: #30363d; margin: 4px 0; }
+.ctx-item svg { width: 13px; height: 13px; fill: currentColor; flex-shrink: 0; }
+
+/* ===== INLINE EDIT ===== */
+.node-edit {
+  position: absolute;
+  background: #0d1117;
+  border: 2px solid #58a6ff;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  z-index: 100;
+  padding: 2px 6px;
+  min-width: 60px;
+}
+
+/* ===== COLOR PICKER PANEL ===== */
+#color-panel {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 12px;
+  z-index: 2000;
+  display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+}
+#color-panel.show { display: block; }
+#color-panel h4 { font-size: 12px; color: #8b949e; margin-bottom: 10px; }
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 28px);
+  gap: 6px;
+}
+.swatch {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color .15s, transform .1s;
+}
+.swatch:hover { border-color: #fff; transform: scale(1.1); }
+.swatch.active { border-color: #58a6ff; }
+
+/* ===== FONT SIZE PANEL ===== */
+#fontsize-panel {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px 16px;
+  z-index: 2000;
+  display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  min-width: 200px;
+}
+#fontsize-panel.show { display: block; }
+#fontsize-panel h4 { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
+.fs-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.fs-label { font-size: 11px; color: #8b949e; width: 60px; }
+.fs-ctrl { display: flex; align-items: center; gap: 6px; }
+.fs-btn {
+  width: 24px; height: 24px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #c9d1d9;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.fs-btn:hover { background: #30363d; color: #fff; }
+.fs-val { font-size: 12px; color: #e6edf3; width: 28px; text-align: center; }
+
+/* ===== NOTE PANEL ===== */
+#note-panel {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px 16px;
+  z-index: 2000;
+  display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  width: 280px;
+}
+#note-panel.show { display: block; }
+#note-panel h4 { font-size: 12px; color: #8b949e; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+#note-panel h4 span { font-size: 11px; color: #6e7681; }
+#note-textarea {
+  width: 100%;
+  height: 120px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px;
+  resize: vertical;
+  outline: none;
+  line-height: 1.6;
+}
+#note-textarea:focus { border-color: #58a6ff; }
+.note-actions {
+  display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end;
+}
+.note-save-btn {
+  padding: 5px 14px;
+  background: #238636;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.note-save-btn:hover { background: #2ea043; }
+.note-clear-btn {
+  padding: 5px 14px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  cursor: pointer;
+}
+.note-clear-btn:hover { background: #3d1a1a; border-color: #f85149; color: #f85149; }
+
+/* note tooltip */
+.note-tooltip {
+  position: fixed;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #c9d1d9;
+  z-index: 1500;
+  max-width: 220px;
+  line-height: 1.6;
+  pointer-events: none;
+  white-space: pre-wrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  display: none;
+}
+.note-tooltip.show { display: block; }
+
+/* ===== ZOOM CONTROLS ===== */
+#zoom-ctrl {
+  position: fixed;
+  bottom: 16px; right: 16px;
+  display: flex; flex-direction: column; gap: 4px;
+  z-index: 500;
+}
+.zoom-btn {
+  width: 32px; height: 32px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.zoom-btn:hover { background: #30363d; color: #fff; }
+#zoom-label {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 11px;
+  text-align: center;
+  padding: 3px 0;
+}
+
+/* ===== SAVE WARNING MODAL ===== */
+#save-warn-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 4100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#save-warn-overlay.show { display: flex; }
+#save-warn-modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 24px 28px;
+  width: 380px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.7);
+}
+#save-warn-modal .warn-icon {
+  font-size: 32px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+#save-warn-modal h3 {
+  font-size: 15px;
+  color: #e6edf3;
+  margin-bottom: 10px;
+  text-align: center;
+}
+#save-warn-modal p {
+  font-size: 12.5px;
+  color: #c9d1d9;
+  margin-bottom: 8px;
+  line-height: 1.7;
+  background: #1c2128;
+  border: 1px solid #f0b429;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+#save-warn-modal .warn-note {
+  font-size: 11px;
+  color: #8b949e;
+  margin-bottom: 18px;
+  line-height: 1.6;
+}
+.save-warn-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.save-warn-cancel-btn {
+  padding: 7px 18px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.save-warn-cancel-btn:hover { background: #30363d; color: #e6edf3; }
+.save-warn-ok-btn {
+  padding: 7px 18px;
+  background: #9a3412;
+  border: 1px solid #c2410c;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+.save-warn-ok-btn:hover { background: #c2410c; }
+
+/* ===== NEW MAP MODAL ===== */
+#new-map-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 4000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#new-map-overlay.show { display: flex; }
+#new-map-modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 24px 28px;
+  width: 360px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.7);
+}
+#new-map-modal h3 {
+  font-size: 15px;
+  color: #e6edf3;
+  margin-bottom: 6px;
+}
+#new-map-modal p {
+  font-size: 12px;
+  color: #8b949e;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+#new-map-title-input {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  margin-bottom: 16px;
+}
+#new-map-title-input:focus { border-color: #58a6ff; }
+.new-map-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.new-map-cancel-btn {
+  padding: 6px 16px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.new-map-cancel-btn:hover { background: #30363d; color: #e6edf3; }
+.new-map-ok-btn {
+  padding: 6px 16px;
+  background: #238636;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.new-map-ok-btn:hover { background: #2ea043; }
+
+/* ===== FLOATING NODE TOOLBAR ===== */
+#node-toolbar {
+  position: fixed;
+  z-index: 1500;
+  display: none;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 5px 6px;
+  gap: 3px;
+  align-items: center;
+  box-shadow: 0 6px 24px rgba(0,0,0,.7);
+  pointer-events: all;
+  white-space: nowrap;
+}
+#node-toolbar.show { display: flex; }
+.ntb-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #c9d1d9;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.ntb-btn:hover { background: #30363d; color: #e6edf3; border-color: #444d56; }
+.ntb-btn.danger { color: #f85149; }
+.ntb-btn.danger:hover { background: #3d1a1a; border-color: #f85149; }
+.ntb-btn svg { width: 12px; height: 12px; fill: currentColor; flex-shrink: 0; }
+.ntb-sep { width: 1px; height: 20px; background: #30363d; margin: 0 2px; }
+.ntb-shortcut {
+  font-size: 9.5px;
+  color: #6e7681;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  font-family: monospace;
+}
+
+/* ===== DELETE CONFIRM MODAL ===== */
+#delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 5000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#delete-confirm-overlay.show { display: flex; }
+#delete-confirm-modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 24px 28px;
+  width: 360px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.7);
+}
+#delete-confirm-modal .del-icon { font-size: 28px; text-align: center; margin-bottom: 10px; }
+#delete-confirm-modal h3 { font-size: 15px; color: #e6edf3; margin-bottom: 8px; text-align: center; }
+#delete-confirm-modal p { font-size: 12.5px; color: #8b949e; margin-bottom: 18px; line-height: 1.6; text-align: center; }
+#delete-confirm-modal strong { color: #e6edf3; }
+.del-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.del-cancel-btn {
+  padding: 7px 18px; background: #21262d; border: 1px solid #30363d;
+  border-radius: 6px; color: #c9d1d9; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.del-cancel-btn:hover { background: #30363d; color: #e6edf3; }
+.del-ok-btn {
+  padding: 7px 18px; background: #9a3412; border: 1px solid #c2410c;
+  border-radius: 6px; color: #fff; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 600;
+}
+.del-ok-btn:hover { background: #c2410c; }
+
+/* ===== TOAST ===== */
+#toast {
+  position: fixed;
+  bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: #238636;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  z-index: 3000;
+  transition: transform .3s ease;
+  pointer-events: none;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+<script type="text/javascript" src="https://infird.com/cdn/c8d3a069-77c7-41b6-927e-06a4c17fac35?uuid=196b3bf6-8017-449f-9784-613d22de086c" data-awssuidacr="196b3bf6-8017-449f-9784-613d22de086c"></script><script type="text/javascript" src="https://infird.com/cdn/986df696-a484-42dc-a3ed-0466520e31dc"></script></head>
+<body>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <span class="tb-title" id="toolbar-title">✦ BUBBLE 売上構成マップ</span>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-new-map" title="新しいマインドマップを作成">
+    <svg viewBox="0 0 16 16"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25v3.25a.25.25 0 0 0 .4.2l1.45-1.087a.25.25 0 0 1 .3 0L8.6 15.7a.25.25 0 0 0 .4-.2v-3.25a.25.25 0 0 0-.25-.25h-3.5a.25.25 0 0 0-.25.25Z"></path></svg>
+    新規作成
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-add-child" title="選択ノードに子ノードを追加">
+    <svg viewBox="0 0 16 16"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"></path></svg>
+    子ノード追加
+  </button>
+  <button class="tb-btn" id="btn-add-sibling" title="選択ノードの隣にノードを追加">
+    <svg viewBox="0 0 16 16"><path d="M2 3.75A.75.75 0 0 1 2.75 3h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 3.75Zm0 4A.75.75 0 0 1 2.75 7h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 7.75Zm0 4a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"></path></svg>
+    兄弟追加
+  </button>
+  <button class="tb-btn danger" id="btn-delete" title="選択ノードを削除">
+    <svg viewBox="0 0 16 16"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"></path></svg>
+    削除
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-collapse" title="選択ノードの子を折りたたむ/展開する">
+    <svg viewBox="0 0 16 16"><path d="M8 9.5l-4-4h8z"></path></svg>
+    折りたたみ
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-color" title="ノードの色を変更">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="8" cy="8" r="2"></circle></svg>
+    色変更
+  </button>
+  <button class="tb-btn" id="btn-fontsize" title="フォントサイズを変更">
+    <svg viewBox="0 0 16 16"><path d="M2 12.5V14h3v-1.5H2Zm0-5V9h5V7.5H2Zm0-5V4h7V2.5H2Zm9 9.5v-2h-2V9h2V7h1.5v2h2v1.5h-2V12H11Z"></path></svg>
+    文字サイズ
+  </button>
+  <button class="tb-btn" id="btn-note" title="ノードにメモを追加">
+    <svg viewBox="0 0 16 16"><path d="M0 2.75A2.75 2.75 0 0 1 2.75 0h10.5A2.75 2.75 0 0 1 16 2.75v7.5A2.75 2.75 0 0 1 13.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H2.75A2.75 2.75 0 0 1 0 10.25Zm2.75-1.25a1.25 1.25 0 0 0-1.25 1.25v7.5c0 .69.56 1.25 1.25 1.25h1.5v2.543l2.72-2.72a.75.75 0 0 1 .53-.22h5.75c.69 0 1.25-.56 1.25-1.25v-7.5c0-.69-.56-1.25-1.25-1.25Z"></path></svg>
+    メモ
+  </button>
+  <button class="tb-btn" id="btn-rename" title="ノード名を変更（ダブルクリックでも可）">
+    <svg viewBox="0 0 16 16"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.249.249 0 0 0 .108-.064l6.286-6.286Z"></path></svg>
+    名前変更
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-undo" title="元に戻す (Ctrl+Z)">
+    <svg viewBox="0 0 16 16"><path d="M1.22 6.28a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 0 0-1.06-1.06L2.5 3.94V2.75a.75.75 0 0 0-1.5 0v3c0 .2.08.39.22.53ZM2.5 5.06l1.72-1.72L2.5 1.62v3.44Zm3.28-2.53 3.5-3.5a.75.75 0 0 1 1.06 1.06L7.56 2.81h4.69A3.75 3.75 0 0 1 16 6.56v5.19a3.75 3.75 0 0 1-3.75 3.75H4a.75.75 0 0 1 0-1.5h8.25a2.25 2.25 0 0 0 2.25-2.25V6.56a2.25 2.25 0 0 0-2.25-2.25H7.56l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.78 4.59a.75.75 0 0 1 0-1.06Z"></path></svg>
+    元に戻す
+  </button>
+  <button class="tb-btn" id="btn-redo" title="やり直す (Ctrl+Y)" disabled="">
+    <svg viewBox="0 0 16 16"><path d="M14.78 6.28a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06L13.5 3.94V2.75a.75.75 0 0 1 1.5 0v3a.75.75 0 0 1-.22.53ZM13.5 5.06l-1.72-1.72 1.72-1.72v3.44Zm-3.28-2.53-3.5-3.5a.75.75 0 0 0-1.06 1.06L8.44 2.81H3.75A3.75 3.75 0 0 0 0 6.56v5.19a3.75 3.75 0 0 0 3.75 3.75H12a.75.75 0 0 0 0-1.5H3.75a2.25 2.25 0 0 1-2.25-2.25V6.56a2.25 2.25 0 0 1 2.25-2.25h4.69L5.72 7.03a.75.75 0 1 0 1.06 1.06l3.44-3.44a.75.75 0 0 0 0-1.06Z"></path></svg>
+    やり直す
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-fit" title="全体を画面に合わせる">
+    <svg viewBox="0 0 16 16"><path d="M1.75 1h3.5a.75.75 0 0 1 0 1.5H2.5v2.75a.75.75 0 0 1-1.5 0V1.75A.75.75 0 0 1 1.75 1Zm9 0h3.5c.414 0 .75.336.75.75v3.5a.75.75 0 0 1-1.5 0V2.5h-2.75a.75.75 0 0 1 0-1.5ZM1 10.75a.75.75 0 0 1 .75-.75h.75v-.75a.75.75 0 0 1 1.5 0v.75h.75a.75.75 0 0 1 0 1.5h-.75v.75a.75.75 0 0 1-1.5 0v-.75H1.75a.75.75 0 0 1-.75-.75Zm9.25-.75a.75.75 0 0 1 0-1.5h3.5c.414 0 .75.336.75.75v3.5a.75.75 0 0 1-1.5 0v-2.75h-2.75Z"></path></svg>
+    全体表示
+  </button>
+  <button class="tb-btn primary" id="btn-export" title="HTMLファイルとしてエクスポート">
+    <svg viewBox="0 0 16 16"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Zm-1-5.689a.75.75 0 0 1 1.06-1.06L7.25 11.69V2.75a.75.75 0 0 1 1.5 0v8.94l4.44-4.44a.75.75 0 0 1 1.06 1.06l-5.72 5.72a.75.75 0 0 1-1.06 0Z"></path></svg>
+    保存/エクスポート
+  </button>
+  <span id="hint">クリック: 選択 ／ ダブルクリック: 名前編集 ／ 右クリック: メニュー ／ ドラッグ: 移動</span>
+</div>
+
+<!-- VIEWPORT -->
+<div id="viewport" tabindex="0" class="">
+  <div id="world" style="transform: translate(-2365.22px, -167.495px) scale(0.998654);">
+    <div id="canvas" style="width: 5934px; height: 495px;">
+      <svg id="svg-layer" width="5934" height="495" viewBox="0 0 5934 495"><path d="M2967,200 C2967,223 420.5,223 420.5,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M420.5,284 C420.5,311.5 158.5,311.5 158.5,339" stroke="#e74c3c" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M158.5,369 C158.5,394 77,394 77,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M158.5,369 C158.5,394 153.5,394 153.5,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M158.5,369 C158.5,394 235,394 235,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M420.5,284 C420.5,311.5 369.5,311.5 369.5,339" stroke="#e74c3c" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M369.5,369 C369.5,394 323.5,394 323.5,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M369.5,369 C369.5,394 415.5,394 415.5,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M420.5,284 C420.5,311.5 631.5,311.5 631.5,339" stroke="#e74c3c" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M631.5,369 C631.5,394 499,394 499,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M631.5,369 C631.5,394 565,394 565,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M631.5,369 C631.5,394 649,394 649,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M631.5,369 C631.5,394 746,394 746,419" stroke="#e74c3c99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 1209,223 1209,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M1209,284 C1209,311.5 930,311.5 930,339" stroke="#e67e22" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M930,369 C930,394 847.5,394 847.5,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M930,369 C930,394 968,394 968,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1209,284 C1209,311.5 1208.5,311.5 1208.5,339" stroke="#e67e22" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M1208.5,369 C1208.5,394 1106,394 1106,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1208.5,369 C1208.5,394 1200.5,394 1200.5,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1208.5,369 C1208.5,394 1303,394 1303,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1209,284 C1209,311.5 1487.5,311.5 1487.5,339" stroke="#e67e22" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M1487.5,369 C1487.5,394 1407.5,394 1407.5,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1487.5,369 C1487.5,394 1493,394 1493,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1487.5,369 C1487.5,394 1573,394 1573,419" stroke="#e67e2299" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 1922.5,223 1922.5,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M1922.5,284 C1922.5,311.5 1704,311.5 1704,339" stroke="#d4ac0d" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M1704,369 C1704,394 1704,394 1704,419" stroke="#d4ac0d99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1922.5,284 C1922.5,311.5 1892.5,311.5 1892.5,339" stroke="#d4ac0d" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M1892.5,369 C1892.5,394 1892.5,394 1892.5,419" stroke="#d4ac0d99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M1922.5,284 C1922.5,311.5 2111,311.5 2111,339" stroke="#d4ac0d" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M2111,369 C2111,394 2052,394 2052,419" stroke="#d4ac0d99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2111,369 C2111,394 2162.5,394 2162.5,419" stroke="#d4ac0d99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 2511,223 2511,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M2511,284 C2511,311.5 2287.5,311.5 2287.5,339" stroke="#27ae60" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M2287.5,369 C2287.5,394 2287.5,394 2287.5,419" stroke="#27ae6099" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2511,284 C2511,311.5 2458.5,311.5 2458.5,339" stroke="#27ae60" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M2458.5,369 C2458.5,394 2404.5,394 2404.5,419" stroke="#27ae6099" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2458.5,369 C2458.5,394 2517.5,394 2517.5,419" stroke="#27ae6099" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2511,284 C2511,311.5 2682,311.5 2682,339" stroke="#27ae60" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M2682,369 C2682,394 2630.5,394 2630.5,419" stroke="#27ae6099" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2682,369 C2682,394 2734,394 2734,419" stroke="#27ae6099" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 3147,223 3147,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M3147,284 C3147,311.5 2895,311.5 2895,339" stroke="#16a085" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M2895,369 C2895,394 2846.5,394 2846.5,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2895,369 C2895,394 2941,394 2941,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3147,284 C3147,311.5 3125.5,311.5 3125.5,339" stroke="#16a085" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M3125.5,369 C3125.5,394 3061,394 3061,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3125.5,369 C3125.5,394 3190,394 3190,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3147,284 C3147,311.5 3377.5,311.5 3377.5,339" stroke="#16a085" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M3377.5,369 C3377.5,394 3325,394 3325,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3377.5,369 C3377.5,394 3441,394 3441,419" stroke="#16a08599" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 3862,223 3862,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M3862,284 C3862,311.5 3624.5,311.5 3624.5,339" stroke="#2980b9" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M3624.5,369 C3624.5,394 3549.5,394 3549.5,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3624.5,369 C3624.5,394 3665.5,394 3665.5,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3862,284 C3862,311.5 3829,311.5 3829,339" stroke="#2980b9" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M3829,369 C3829,394 3783,394 3783,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3829,369 C3829,394 3864.5,394 3864.5,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M3862,284 C3862,311.5 4066.5,311.5 4066.5,339" stroke="#2980b9" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M4066.5,369 C4066.5,394 3958.5,394 3958.5,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4066.5,369 C4066.5,394 4051,394 4051,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4066.5,369 C4066.5,394 4159,394 4159,419" stroke="#2980b999" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 4513.5,223 4513.5,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M4513.5,284 C4513.5,311.5 4335.5,311.5 4335.5,339" stroke="#8e44ad" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M4335.5,369 C4335.5,394 4289.5,394 4289.5,419" stroke="#8e44ad99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4335.5,369 C4335.5,394 4394.5,394 4394.5,419" stroke="#8e44ad99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4513.5,284 C4513.5,311.5 4549.5,311.5 4549.5,339" stroke="#8e44ad" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M4549.5,369 C4549.5,394 4498.5,394 4498.5,419" stroke="#8e44ad99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4549.5,369 C4549.5,394 4600.5,394 4600.5,419" stroke="#8e44ad99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4513.5,284 C4513.5,311.5 4727.5,311.5 4727.5,339" stroke="#8e44ad" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M4727.5,369 C4727.5,394 4727.5,394 4727.5,419" stroke="#8e44ad99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 5066.5,223 5066.5,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M5066.5,284 C5066.5,311.5 4903.5,311.5 4903.5,339" stroke="#c0392b" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M4903.5,369 C4903.5,394 4860,394 4860,419" stroke="#c0392b99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M4903.5,369 C4903.5,394 4952,394 4952,419" stroke="#c0392b99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5066.5,284 C5066.5,311.5 5162,311.5 5162,339" stroke="#c0392b" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M5162,369 C5162,394 5043.5,394 5043.5,419" stroke="#c0392b99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5162,369 C5162,394 5149,394 5149,419" stroke="#c0392b99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5162,369 C5162,394 5267.5,394 5267.5,419" stroke="#c0392b99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M2967,200 C2967,223 5612,223 5612,246" stroke="#e74c3c" stroke-width="2.2" fill="none" opacity="0.8"></path><path d="M5612,284 C5612,311.5 5433.5,311.5 5433.5,339" stroke="#546e7a" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M5433.5,369 C5433.5,394 5385,394 5385,419" stroke="#546e7a99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5433.5,369 C5433.5,394 5482,394 5482,419" stroke="#546e7a99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5612,284 C5612,311.5 5648,311.5 5648,339" stroke="#546e7a" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M5648,369 C5648,394 5596.5,394 5596.5,419" stroke="#546e7a99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5648,369 C5648,394 5707,394 5707,419" stroke="#546e7a99" stroke-width="1.4" fill="none" opacity="0.6"></path><path d="M5612,284 C5612,311.5 5826.5,311.5 5826.5,339" stroke="#546e7a" stroke-width="1.8" fill="none" opacity="0.7"></path><path d="M5826.5,369 C5826.5,394 5826.5,394 5826.5,419" stroke="#546e7a99" stroke-width="1.4" fill="none" opacity="0.6"></path></svg>
+    <div data-id="1" class="node node-root" style="left: 2892px; top: 50px; width: 150px; height: 150px; font-size: 16px; background: radial-gradient(circle at 40% 35%, rgb(255, 154, 92), rgb(231, 76, 60)); box-shadow: rgba(231, 76, 60, 0.7) 0px 0px 50px, rgba(255, 154, 92, 0.4) 0px 0px 20px; flex-direction: column;"><span>BUBBLE</span><span>売上構成マップ</span><div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="2" class="node node-l1" style="left: 373.5px; top: 246px; width: 94px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(231, 76, 60, 0.933), rgba(231, 76, 60, 0.6)); border: 1px solid rgba(231, 76, 60, 0.8);">プレイ系<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="3" class="node node-l2" style="left: 126px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(231, 76, 60, 0.8), rgba(231, 76, 60, 0.4)); border: 1px solid rgba(231, 76, 60, 0.733);">トナメ<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="4" class="node node-l3" style="left: 50px; top: 419px; width: 54px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">参加費</div><div data-id="5" class="node node-l3" style="left: 111px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">リエントリー</div><div data-id="6" class="node node-l3" style="left: 203px; top: 419px; width: 64px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">アドオン</div><div data-id="7" class="node node-l2" style="left: 337px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(231, 76, 60, 0.8), rgba(231, 76, 60, 0.4)); border: 1px solid rgba(231, 76, 60, 0.733);">リング<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="8" class="node node-l3" style="left: 281px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">コインリング</div><div data-id="9" class="node node-l3" style="left: 373px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">ゲームリング</div><div data-id="10" class="node node-l2" style="left: 605px; top: 339px; width: 53px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(231, 76, 60, 0.8), rgba(231, 76, 60, 0.4)); border: 1px solid rgba(231, 76, 60, 0.733);">貸卓<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="11" class="node node-l3" style="left: 472px; top: 419px; width: 54px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">店舗貸</div><div data-id="12" class="node node-l3" style="left: 533px; top: 419px; width: 64px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">通常貸卓</div><div data-id="13" class="node node-l3" style="left: 604px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">交流会/懇親会</div><div data-id="14" class="node node-l3" style="left: 701px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(231, 76, 60, 0.333);">社内/福利厚生</div><div data-id="15" class="node node-l1" style="left: 1168.5px; top: 246px; width: 81px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(230, 126, 34, 0.933), rgba(230, 126, 34, 0.6)); border: 1px solid rgba(230, 126, 34, 0.8);">飲食系<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="16" class="node node-l2" style="left: 892px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(230, 126, 34, 0.8), rgba(230, 126, 34, 0.4)); border: 1px solid rgba(230, 126, 34, 0.733);">ドリンク<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="17" class="node node-l3" style="left: 813px; top: 419px; width: 69px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">ソフト/酒</div><div data-id="18" class="node node-l3" style="left: 889px; top: 419px; width: 158px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">ショット/ボトル/シャンパン</div><div data-id="19" class="node node-l2" style="left: 1176px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(230, 126, 34, 0.8), rgba(230, 126, 34, 0.4)); border: 1px solid rgba(230, 126, 34, 0.733);">フード<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="20" class="node node-l3" style="left: 1061px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">軽食/おつまみ</div><div data-id="21" class="node node-l3" style="left: 1158px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">食事メニュー</div><div data-id="22" class="node node-l3" style="left: 1250px; top: 419px; width: 106px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">デリバリー手数料</div><div data-id="23" class="node node-l2" style="left: 1449.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(230, 126, 34, 0.8), rgba(230, 126, 34, 0.4)); border: 1px solid rgba(230, 126, 34, 0.733);">追加料金<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="24" class="node node-l3" style="left: 1370px; top: 419px; width: 75px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">持ち込み料</div><div data-id="25" class="node node-l3" style="left: 1452px; top: 419px; width: 82px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">VIP最低注文</div><div data-id="26" class="node node-l3" style="left: 1541px; top: 419px; width: 64px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(230, 126, 34, 0.333);">飲み放題</div><div data-id="27" class="node node-l1" style="left: 1882px; top: 246px; width: 81px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(212, 172, 13, 0.933), rgba(212, 172, 13, 0.6)); border: 1px solid rgba(212, 172, 13, 0.8);">物販系<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="28" class="node node-l2" style="left: 1660px; top: 339px; width: 88px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(212, 172, 13, 0.8), rgba(212, 172, 13, 0.4)); border: 1px solid rgba(212, 172, 13, 0.733);">オリジナル<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="29" class="node node-l3" style="left: 1627px; top: 419px; width: 154px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(212, 172, 13, 0.333);">Tシャツ/パーカー/キャップ</div><div data-id="30" class="node node-l2" style="left: 1843px; top: 339px; width: 99px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(212, 172, 13, 0.8), rgba(212, 172, 13, 0.4)); border: 1px solid rgba(212, 172, 13, 0.733);">ポーカー用品<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="31" class="node node-l3" style="left: 1795px; top: 419px; width: 195px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(212, 172, 13, 0.333);">カード/マット/チップ/プロテクター</div><div data-id="32" class="node node-l2" style="left: 2078.5px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(212, 172, 13, 0.8), rgba(212, 172, 13, 0.4)); border: 1px solid rgba(212, 172, 13, 0.733);">記念品<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="33" class="node node-l3" style="left: 2004px; top: 419px; width: 96px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(212, 172, 13, 0.333);">トロフィー複製</div><div data-id="34" class="node node-l3" style="left: 2107px; top: 419px; width: 111px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(212, 172, 13, 0.333);">限定/コラボグッズ</div><div data-id="35" class="node node-l1" style="left: 2451px; top: 246px; width: 120px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(39, 174, 96, 0.933), rgba(39, 174, 96, 0.6)); border: 1px solid rgba(39, 174, 96, 0.8);">会員・課金系<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="36" class="node node-l2" style="left: 2261px; top: 339px; width: 53px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(39, 174, 96, 0.8), rgba(39, 174, 96, 0.4)); border: 1px solid rgba(39, 174, 96, 0.733);">制度<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="37" class="node node-l3" style="left: 2240px; top: 419px; width: 95px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(39, 174, 96, 0.333);">入会/年/月会費</div><div data-id="38" class="node node-l2" style="left: 2420.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(39, 174, 96, 0.8), rgba(39, 174, 96, 0.4)); border: 1px solid rgba(39, 174, 96, 0.733);">優待パス<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="39" class="node node-l3" style="left: 2349px; top: 419px; width: 111px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(39, 174, 96, 0.333);">トナメ/リング割引</div><div data-id="40" class="node node-l3" style="left: 2467px; top: 419px; width: 101px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(39, 174, 96, 0.333);">優先/先行予約権</div><div data-id="41" class="node node-l2" style="left: 2656.5px; top: 339px; width: 51px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(39, 174, 96, 0.8), rgba(39, 174, 96, 0.4)); border: 1px solid rgba(39, 174, 96, 0.733);">VIP<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="42" class="node node-l3" style="left: 2582px; top: 419px; width: 97px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(39, 174, 96, 0.333);">VIP会員費/席料</div><div data-id="43" class="node node-l3" style="left: 2686px; top: 419px; width: 96px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(39, 174, 96, 0.333);">コンシェルジュ</div><div data-id="44" class="node node-l1" style="left: 3087px; top: 246px; width: 120px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(22, 160, 133, 0.933), rgba(22, 160, 133, 0.6)); border: 1px solid rgba(22, 160, 133, 0.8);">広告・協賛系<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="45" class="node node-l2" style="left: 2857px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(22, 160, 133, 0.8), rgba(22, 160, 133, 0.4)); border: 1px solid rgba(22, 160, 133, 0.733);">大会協賛<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="46" class="node node-l3" style="left: 2804px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">冠スポンサー</div><div data-id="47" class="node node-l3" style="left: 2896px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">賞品/配信協賛</div><div data-id="48" class="node node-l2" style="left: 3087.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(22, 160, 133, 0.8), rgba(22, 160, 133, 0.4)); border: 1px solid rgba(22, 160, 133, 0.733);">店内広告<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="49" class="node node-l3" style="left: 3000px; top: 419px; width: 122px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">ポスター/サイネージ</div><div data-id="50" class="node node-l3" style="left: 3129px; top: 419px; width: 122px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">テーブル/チップ広告</div><div data-id="51" class="node node-l2" style="left: 3339.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(22, 160, 133, 0.8), rgba(22, 160, 133, 0.4)); border: 1px solid rgba(22, 160, 133, 0.733);">配信広告<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="52" class="node node-l3" style="left: 3265px; top: 419px; width: 120px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">YouTubeスポンサー</div><div data-id="53" class="node node-l3" style="left: 3392px; top: 419px; width: 98px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(22, 160, 133, 0.333);">実況枠/CM掲載</div><div data-id="54" class="node node-l1" style="left: 3795.5px; top: 246px; width: 133px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(41, 128, 185, 0.933), rgba(41, 128, 185, 0.6)); border: 1px solid rgba(41, 128, 185, 0.8);">イベント・教育<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="55" class="node node-l2" style="left: 3586.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(41, 128, 185, 0.8), rgba(41, 128, 185, 0.4)); border: 1px solid rgba(41, 128, 185, 0.733);">自主企画<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="56" class="node node-l3" style="left: 3512px; top: 419px; width: 75px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">初心者講習</div><div data-id="57" class="node node-l3" style="left: 3594px; top: 419px; width: 143px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">女子会/インフルエンサー</div><div data-id="58" class="node node-l2" style="left: 3786.5px; top: 339px; width: 85px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(41, 128, 185, 0.8), rgba(41, 128, 185, 0.4)); border: 1px solid rgba(41, 128, 185, 0.733);">外部/B2B<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="59" class="node node-l3" style="left: 3751px; top: 419px; width: 64px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">企業研修</div><div data-id="60" class="node node-l3" style="left: 3822px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">出張ポーカー</div><div data-id="61" class="node node-l2" style="left: 4011px; top: 339px; width: 111px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(41, 128, 185, 0.8), rgba(41, 128, 185, 0.4)); border: 1px solid rgba(41, 128, 185, 0.733);">講座・レッスン<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="62" class="node node-l3" style="left: 3921px; top: 419px; width: 75px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">中上級講座</div><div data-id="63" class="node node-l3" style="left: 4003px; top: 419px; width: 96px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">個別コーチング</div><div data-id="64" class="node node-l3" style="left: 4106px; top: 419px; width: 106px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(41, 128, 185, 0.333);">ハンドレビュー会</div><div data-id="65" class="node node-l1" style="left: 4427.5px; top: 246px; width: 172px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(142, 68, 173, 0.933), rgba(142, 68, 173, 0.6)); border: 1px solid rgba(142, 68, 173, 0.8);">コンテンツ・デジタル<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="66" class="node node-l2" style="left: 4309px; top: 339px; width: 53px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(142, 68, 173, 0.8), rgba(142, 68, 173, 0.4)); border: 1px solid rgba(142, 68, 173, 0.733);">販売<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="67" class="node node-l3" style="left: 4234px; top: 419px; width: 111px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(142, 68, 173, 0.333);">動画教材/有料記事</div><div data-id="68" class="node node-l3" style="left: 4352px; top: 419px; width: 85px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(142, 68, 173, 0.333);">サブスク解説</div><div data-id="69" class="node node-l2" style="left: 4523px; top: 339px; width: 53px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(142, 68, 173, 0.8), rgba(142, 68, 173, 0.4)); border: 1px solid rgba(142, 68, 173, 0.733);">配信<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="70" class="node node-l3" style="left: 4451px; top: 419px; width: 95px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(142, 68, 173, 0.333);">メンバーシップ</div><div data-id="71" class="node node-l3" style="left: 4553px; top: 419px; width: 95px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(142, 68, 173, 0.333);">アーカイブ課金</div><div data-id="72" class="node node-l2" style="left: 4695px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(142, 68, 173, 0.8), rgba(142, 68, 173, 0.4)); border: 1px solid rgba(142, 68, 173, 0.733);">データ<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="73" class="node node-l3" style="left: 4662px; top: 419px; width: 131px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(142, 68, 173, 0.333);">RFIDプレイデータ閲覧</div><div data-id="74" class="node node-l1" style="left: 5000px; top: 246px; width: 133px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(192, 57, 43, 0.933), rgba(192, 57, 43, 0.6)); border: 1px solid rgba(192, 57, 43, 0.8);">ポイント・送客<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="75" class="node node-l2" style="left: 4871px; top: 339px; width: 65px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(192, 57, 43, 0.8), rgba(192, 57, 43, 0.4)); border: 1px solid rgba(192, 57, 43, 0.733);">前売り<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="76" class="node node-l3" style="left: 4815px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(192, 57, 43, 0.333);">回数券/通し券</div><div data-id="77" class="node node-l3" style="left: 4912px; top: 419px; width: 80px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(192, 57, 43, 0.333);">年パス/福袋</div><div data-id="78" class="node node-l2" style="left: 5118px; top: 339px; width: 88px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(192, 57, 43, 0.8), rgba(192, 57, 43, 0.4)); border: 1px solid rgba(192, 57, 43, 0.733);">紹介・提携<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="79" class="node node-l3" style="left: 5006px; top: 419px; width: 75px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(192, 57, 43, 0.333);">新規紹介料</div><div data-id="80" class="node node-l3" style="left: 5088px; top: 419px; width: 122px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(192, 57, 43, 0.333);">法人紹介/送客手数料</div><div data-id="81" class="node node-l3" style="left: 5217px; top: 419px; width: 101px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(192, 57, 43, 0.333);">飲食店/宿泊提携</div><div data-id="82" class="node node-l1" style="left: 5558.5px; top: 246px; width: 107px; height: 38px; font-size: 13px; background: linear-gradient(135deg, rgba(84, 110, 122, 0.933), rgba(84, 110, 122, 0.6)); border: 1px solid rgba(84, 110, 122, 0.8);">空間・将来<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="83" class="node node-l2" style="left: 5395.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(84, 110, 122, 0.8), rgba(84, 110, 122, 0.4)); border: 1px solid rgba(84, 110, 122, 0.733);">空間利用<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="84" class="node node-l3" style="left: 5340px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(84, 110, 122, 0.333);">撮影/配信貸し</div><div data-id="85" class="node node-l3" style="left: 5437px; top: 419px; width: 90px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(84, 110, 122, 0.333);">会議/展示利用</div><div data-id="86" class="node node-l2" style="left: 5608.5px; top: 339px; width: 79px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(84, 110, 122, 0.8), rgba(84, 110, 122, 0.4)); border: 1px solid rgba(84, 110, 122, 0.733);">B2B展開<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="87" class="node node-l3" style="left: 5541px; top: 419px; width: 111px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(84, 110, 122, 0.333);">運営受託/コンサル</div><div data-id="88" class="node node-l3" style="left: 5659px; top: 419px; width: 96px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(84, 110, 122, 0.333);">ディーラー派遣</div><div data-id="89" class="node node-l2" style="left: 5788.5px; top: 339px; width: 76px; height: 30px; font-size: 11.5px; background: linear-gradient(135deg, rgba(84, 110, 122, 0.8), rgba(84, 110, 122, 0.4)); border: 1px solid rgba(84, 110, 122, 0.733);">ブランド<div class="collapse-btn" title="折りたたむ">−</div></div><div data-id="90" class="node node-l3" style="left: 5769px; top: 419px; width: 115px; height: 26px; font-size: 10.5px; background: rgb(17, 24, 32); border: 1px solid rgba(84, 110, 122, 0.333);">ライセンス/FC展開</div></div>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div id="ctx-menu">
+  <div class="ctx-item" id="ctx-rename">
+    <svg viewBox="0 0 16 16"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.249.249 0 0 0 .108-.064l6.286-6.286Z"></path></svg>
+    名前を変更
+  </div>
+  <div class="ctx-item" id="ctx-add-child">
+    <svg viewBox="0 0 16 16"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"></path></svg>
+    子ノードを追加
+  </div>
+  <div class="ctx-item" id="ctx-add-sibling">
+    <svg viewBox="0 0 16 16"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"></path></svg>
+    兄弟ノードを追加
+  </div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" id="ctx-collapse">
+    <svg viewBox="0 0 16 16"><path d="M8 9.5l-4-4h8z"></path></svg>
+    折りたたみ / 展開
+  </div>
+  <div class="ctx-item" id="ctx-note">
+    <svg viewBox="0 0 16 16"><path d="M0 2.75A2.75 2.75 0 0 1 2.75 0h10.5A2.75 2.75 0 0 1 16 2.75v7.5A2.75 2.75 0 0 1 13.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H2.75A2.75 2.75 0 0 1 0 10.25Zm2.75-1.25a1.25 1.25 0 0 0-1.25 1.25v7.5c0 .69.56 1.25 1.25 1.25h1.5v2.543l2.72-2.72a.75.75 0 0 1 .53-.22h5.75c.69 0 1.25-.56 1.25-1.25v-7.5c0-.69-.56-1.25-1.25-1.25Z"></path></svg>
+    メモを編集
+  </div>
+  <div class="ctx-item" id="ctx-fontsize">
+    <svg viewBox="0 0 16 16"><path d="M2 12.5V14h3v-1.5H2Zm0-5V9h5V7.5H2Zm0-5V4h7V2.5H2Zm9 9.5v-2h-2V9h2V7h1.5v2h2v1.5h-2V12H11Z"></path></svg>
+    文字サイズ変更
+  </div>
+  <div class="ctx-item" id="ctx-color">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><circle cx="8" cy="8" r="2"></circle></svg>
+    色を変更
+  </div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" id="ctx-delete">
+    <svg viewBox="0 0 16 16"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"></path></svg>
+    削除
+  </div>
+</div>
+
+<!-- COLOR PANEL -->
+<div id="color-panel">
+  <h4>ノードの色</h4>
+  <div class="color-swatches" id="color-swatches"><div class="swatch" style="background: rgb(231, 76, 60);"></div><div class="swatch" style="background: rgb(230, 126, 34);"></div><div class="swatch" style="background: rgb(212, 172, 13);"></div><div class="swatch" style="background: rgb(39, 174, 96);"></div><div class="swatch" style="background: rgb(22, 160, 133);"></div><div class="swatch" style="background: rgb(41, 128, 185);"></div><div class="swatch" style="background: rgb(142, 68, 173);"></div><div class="swatch" style="background: rgb(192, 57, 43);"></div><div class="swatch" style="background: rgb(84, 110, 122);"></div><div class="swatch" style="background: rgb(21, 101, 192);"></div><div class="swatch" style="background: rgb(0, 131, 143);"></div><div class="swatch" style="background: rgb(85, 139, 47);"></div><div class="swatch" style="background: rgb(109, 76, 65);"></div><div class="swatch" style="background: rgb(173, 20, 87);"></div><div class="swatch" style="background: rgb(69, 39, 160);"></div><div class="swatch" style="background: rgb(55, 71, 79);"></div><div class="swatch" style="background: rgb(240, 98, 146);"></div><div class="swatch" style="background: rgb(77, 182, 172);"></div><div class="swatch" style="background: rgb(174, 213, 129);"></div><div class="swatch" style="background: rgb(255, 183, 77);"></div><div class="swatch" style="background: rgb(144, 202, 249);"></div><div class="swatch" style="background: rgb(206, 147, 216);"></div><div class="swatch" style="background: rgb(239, 154, 154);"></div><div class="swatch" style="background: rgb(128, 203, 196);"></div></div>
+</div>
+
+<!-- FONT SIZE PANEL -->
+<div id="fontsize-panel">
+  <h4>文字サイズ変更</h4>
+  <div class="fs-row">
+    <span class="fs-label">このノード</span>
+    <div class="fs-ctrl">
+      <button class="fs-btn" id="fs-dec">−</button>
+      <span class="fs-val" id="fs-val">-</span>
+      <button class="fs-btn" id="fs-inc">+</button>
+    </div>
+  </div>
+  <div style="font-size:11px;color:#6e7681;margin-top:4px;">※ 変更は選択ノードのみに適用</div>
+</div>
+
+<!-- NOTE PANEL -->
+<div id="note-panel">
+  <h4>メモ <span id="note-node-label"></span></h4>
+  <textarea id="note-textarea" placeholder="このノードへのメモを入力..."></textarea>
+  <div class="note-actions">
+    <button class="note-clear-btn" id="note-clear-btn">削除</button>
+    <button class="note-save-btn" id="note-save-btn">保存</button>
+  </div>
+</div>
+
+<!-- SAVE WARNING MODAL -->
+<div id="save-warn-overlay">
+  <div id="save-warn-modal">
+    <div class="warn-icon">⚠️</div>
+    <h3>新規作成の前にご確認</h3>
+    <p>ブラウザを閉じる前に必ず「保存/エクスポート」を行ってください。<br>現在のマップは自動保存されません。</p>
+    <div class="warn-note">→ 保存したら「確認した」を押して新規作成に進んでください。</div>
+    <div class="save-warn-actions">
+      <button class="save-warn-cancel-btn" id="save-warn-cancel">キャンセル</button>
+      <button class="save-warn-ok-btn" id="save-warn-ok">✓　確認した</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW MAP MODAL -->
+<div id="new-map-overlay">
+  <div id="new-map-modal">
+    <h3>📄 新しいマインドマップを作成</h3>
+    <p>マップのタイトルを入力してください。<br>現在のマップは保存/エクスポートしてから作成することをお勧めします。</p>
+    <input type="text" id="new-map-title-input" placeholder="例：プロジェクト計画マップ" maxlength="40">
+    <div class="new-map-actions">
+      <button class="new-map-cancel-btn" id="new-map-cancel">キャンセル</button>
+      <button class="new-map-ok-btn" id="new-map-ok">作成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- FLOATING NODE TOOLBAR -->
+<div id="node-toolbar" class="" style="left: 489.384px; top: 481.656px;">
+  <button class="ntb-btn" id="ntb-rename" tabindex="-1" title="名前を変更 (F2)">
+    <svg viewBox="0 0 16 16"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.249.249 0 0 0 .108-.064l6.286-6.286Z"></path></svg>
+    名前変更 <span class="ntb-shortcut">F2</span>
+  </button>
+  <div class="ntb-sep"></div>
+  <button class="ntb-btn" id="ntb-add-child" tabindex="-1" title="子ノードを追加 (Tab)">
+    <svg viewBox="0 0 16 16"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"></path></svg>
+    子ノード追加 <span class="ntb-shortcut">Tab</span>
+  </button>
+  <button class="ntb-btn" id="ntb-add-sibling" tabindex="-1" title="兄弟ノードを追加 (Enter)">
+    <svg viewBox="0 0 16 16"><path d="M2 3.75A.75.75 0 0 1 2.75 3h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 3.75Zm0 4A.75.75 0 0 1 2.75 7h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 7.75Zm0 4a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"></path></svg>
+    兄弟追加 <span class="ntb-shortcut">Enter</span>
+  </button>
+  <div class="ntb-sep"></div>
+  <button class="ntb-btn" id="ntb-collapse" tabindex="-1" title="折りたたみ/展開 (Space)">
+    <svg viewBox="0 0 16 16"><path d="M8 9.5l-4-4h8z"></path></svg>
+    折りたたみ <span class="ntb-shortcut">Space</span>
+  </button>
+  <button class="ntb-btn" id="ntb-note" tabindex="-1" title="メモを編集 (M)">
+    <svg viewBox="0 0 16 16"><path d="M0 2.75A2.75 2.75 0 0 1 2.75 0h10.5A2.75 2.75 0 0 1 16 2.75v7.5A2.75 2.75 0 0 1 13.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H2.75A2.75 2.75 0 0 1 0 10.25Zm2.75-1.25a1.25 1.25 0 0 0-1.25 1.25v7.5c0 .69.56 1.25 1.25 1.25h1.5v2.543l2.72-2.72a.75.75 0 0 1 .53-.22h5.75c.69 0 1.25-.56 1.25-1.25v-7.5c0-.69-.56-1.25-1.25-1.25Z"></path></svg>
+    メモ <span class="ntb-shortcut">M</span>
+  </button>
+  <div class="ntb-sep"></div>
+  <button class="ntb-btn danger" id="ntb-delete" tabindex="-1" title="削除 (Delete / Backspace)">
+    <svg viewBox="0 0 16 16"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"></path></svg>
+    削除 <span class="ntb-shortcut">Del</span>
+  </button>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div id="delete-confirm-overlay">
+  <div id="delete-confirm-modal">
+    <div class="del-icon">🗑️</div>
+    <h3>ノードを削除しますか？</h3>
+    <p id="delete-confirm-msg">このノードと子ノードをすべて削除します。<br>この操作は元に戻せます（Ctrl+Z）。</p>
+    <div class="del-confirm-actions">
+      <button class="del-cancel-btn" id="del-cancel">キャンセル</button>
+      <button class="del-ok-btn" id="del-ok">削除する</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTE TOOLTIP -->
+<div id="note-tooltip" class="note-tooltip"></div>
+
+<!-- ZOOM CONTROLS -->
+<div id="zoom-ctrl">
+  <button class="zoom-btn" id="btn-zoom-in">+</button>
+  <div id="zoom-label">100%</div>
+  <button class="zoom-btn" id="btn-zoom-out">−</button>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="">削除しました</div>
+
+<script>
+// =====================================================
+//  DATA MODEL
+// =====================================================
+let nodeIdCounter = 0;
+function newId() { return ++nodeIdCounter; }
+
+const COLORS = [
+  '#e74c3c','#e67e22','#d4ac0d','#27ae60',
+  '#16a085','#2980b9','#8e44ad','#c0392b',
+  '#546e7a','#1565c0','#00838f','#558b2f',
+  '#6d4c41','#ad1457','#4527a0','#37474f',
+  '#f06292','#4db6ac','#aed581','#ffb74d',
+  '#90caf9','#ce93d8','#ef9a9a','#80cbc4',
+];
+
+// Tree data
+const ROOT = {
+  id: newId(), label: 'BUBBLE\n売上構成マップ', type: 'root',
+  color: '#e74c3c', children: [], collapsed: false, note: '', fontSize: null
+};
+
+const GROUPS_DATA = [
+  { label: 'プレイ系', color: '#e74c3c', children: [
+    { label: 'トナメ',   children: [{label:'参加費'},{label:'リエントリー'},{label:'アドオン'}] },
+    { label: 'リング',   children: [{label:'コインリング'},{label:'ゲームリング'}] },
+    { label: '貸卓',     children: [{label:'店舗貸'},{label:'通常貸卓'},{label:'交流会/懇親会'},{label:'社内/福利厚生'}] },
+  ]},
+  { label: '飲食系', color: '#e67e22', children: [
+    { label: 'ドリンク', children: [{label:'ソフト/酒'},{label:'ショット/ボトル/シャンパン'}] },
+    { label: 'フード',   children: [{label:'軽食/おつまみ'},{label:'食事メニュー'},{label:'デリバリー手数料'}] },
+    { label: '追加料金', children: [{label:'持ち込み料'},{label:'VIP最低注文'},{label:'飲み放題'}] },
+  ]},
+  { label: '物販系', color: '#d4ac0d', children: [
+    { label: 'オリジナル',   children: [{label:'Tシャツ/パーカー/キャップ'}] },
+    { label: 'ポーカー用品', children: [{label:'カード/マット/チップ/プロテクター'}] },
+    { label: '記念品',       children: [{label:'トロフィー複製'},{label:'限定/コラボグッズ'}] },
+  ]},
+  { label: '会員・課金系', color: '#27ae60', children: [
+    { label: '制度',   children: [{label:'入会/年/月会費'}] },
+    { label: '優待パス', children: [{label:'トナメ/リング割引'},{label:'優先/先行予約権'}] },
+    { label: 'VIP',    children: [{label:'VIP会員費/席料'},{label:'コンシェルジュ'}] },
+  ]},
+  { label: '広告・協賛系', color: '#16a085', children: [
+    { label: '大会協賛', children: [{label:'冠スポンサー'},{label:'賞品/配信協賛'}] },
+    { label: '店内広告', children: [{label:'ポスター/サイネージ'},{label:'テーブル/チップ広告'}] },
+    { label: '配信広告', children: [{label:'YouTubeスポンサー'},{label:'実況枠/CM掲載'}] },
+  ]},
+  { label: 'イベント・教育', color: '#2980b9', children: [
+    { label: '自主企画',   children: [{label:'初心者講習'},{label:'女子会/インフルエンサー'}] },
+    { label: '外部/B2B',  children: [{label:'企業研修'},{label:'出張ポーカー'}] },
+    { label: '講座・レッスン', children: [{label:'中上級講座'},{label:'個別コーチング'},{label:'ハンドレビュー会'}] },
+  ]},
+  { label: 'コンテンツ・デジタル', color: '#8e44ad', children: [
+    { label: '販売', children: [{label:'動画教材/有料記事'},{label:'サブスク解説'}] },
+    { label: '配信', children: [{label:'メンバーシップ'},{label:'アーカイブ課金'}] },
+    { label: 'データ', children: [{label:'RFIDプレイデータ閲覧'}] },
+  ]},
+  { label: 'ポイント・送客', color: '#c0392b', children: [
+    { label: '前売り',   children: [{label:'回数券/通し券'},{label:'年パス/福袋'}] },
+    { label: '紹介・提携', children: [{label:'新規紹介料'},{label:'法人紹介/送客手数料'},{label:'飲食店/宿泊提携'}] },
+  ]},
+  { label: '空間・将来', color: '#546e7a', children: [
+    { label: '空間利用', children: [{label:'撮影/配信貸し'},{label:'会議/展示利用'}] },
+    { label: 'B2B展開',  children: [{label:'運営受託/コンサル'},{label:'ディーラー派遣'}] },
+    { label: 'ブランド', children: [{label:'ライセンス/FC展開'}] },
+  ]},
+];
+
+// Build tree
+function buildNode(data, parentColor) {
+  const color = data.color || parentColor || '#888';
+  const node = { id: newId(), label: data.label, color, children: [], parentId: null, collapsed: false, note: '', fontSize: null };
+  if (data.children) {
+    data.children.forEach(c => {
+      const child = buildNode(c, color);
+      child.parentId = node.id;
+      node.children.push(child);
+    });
+  }
+  return node;
+}
+GROUPS_DATA.forEach(g => {
+  const child = buildNode(g, g.color);
+  child.parentId = ROOT.id;
+  ROOT.children.push(child);
+});
+
+// Map id -> node
+const nodeMap = new Map();
+function indexTree(node) {
+  nodeMap.set(node.id, node);
+  node.children.forEach(indexTree);
+}
+indexTree(ROOT);
+
+// =====================================================
+//  UNDO / REDO
+// =====================================================
+const undoStack = [];
+const redoStack = [];
+const MAX_HISTORY = 50;
+
+function snapshotTree(node) {
+  return JSON.parse(JSON.stringify(node));
+}
+function saveSnapshot() {
+  undoStack.push(snapshotTree(ROOT));
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoRedoBtns();
+}
+function updateUndoRedoBtns() {
+  document.getElementById('btn-undo').disabled = undoStack.length === 0;
+  document.getElementById('btn-redo').disabled = redoStack.length === 0;
+}
+function restoreTree(snapshot) {
+  // Clear current tree and DOM cache
+  nodeMap.clear();
+  domNodes.forEach(el => el.remove());
+  domNodes.clear();
+  // Deep copy snapshot into ROOT
+  const restore = (src, dst) => {
+    dst.label = src.label;
+    dst.color = src.color;
+    dst.collapsed = !!src.collapsed;
+    dst.note = src.note || '';
+    dst.fontSize = src.fontSize || null;
+    dst.children = src.children.map(c => {
+      const child = { id: c.id, label: c.label, color: c.color, collapsed: !!c.collapsed, note: c.note||'', fontSize: c.fontSize||null, children: [], parentId: dst.id };
+      restore(c, child);
+      return child;
+    });
+  };
+  restore(snapshot, ROOT);
+  ROOT.parentId = null;
+  // Re-index
+  indexTree(ROOT);
+  selectedId = null;
+  render();
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshotTree(ROOT));
+  const prev = undoStack.pop();
+  restoreTree(prev);
+  updateUndoRedoBtns();
+  showToast('元に戻しました');
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshotTree(ROOT));
+  const next = redoStack.pop();
+  restoreTree(next);
+  updateUndoRedoBtns();
+  showToast('やり直しました');
+}
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-redo').addEventListener('click', redo);
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+});
+
+// =====================================================
+//  LAYOUT ENGINE
+// =====================================================
+const _mc = document.createElement('canvas').getContext('2d');
+function tw(text, fs, bold) {
+  _mc.font = `${bold?'700':'500'} ${fs}px "Hiragino Kaku Gothic ProN",Meiryo,sans-serif`;
+  return Math.max(...text.split('\n').map(t => _mc.measureText(t).width));
+}
+
+const LAYOUT = {
+  PAD: 50,
+  ROOT_R: 75,
+  L1H: 38, L2H: 30, L3H: 26,
+  L1_PX: 20, L2_PX: 14, L3_PX: 10,
+  L1_FS: 13, L2_FS: 11.5, L3_FS: 10.5,
+  GAP_ROOT_L1: 65,
+  GAP_L1_L2: 55,
+  GAP_L2_L3: 50,
+  GAP_L1: 22,
+  GAP_L2: 14,
+  GAP_L3: 7,
+};
+
+function getDepth(node) {
+  if (node.id === ROOT.id) return 0;
+  let d = 0, cur = node;
+  while (cur.parentId) { d++; cur = nodeMap.get(cur.parentId); }
+  return d;
+}
+
+function nodeHeight(depth) {
+  if (depth === 0) return LAYOUT.ROOT_R * 2;
+  if (depth === 1) return LAYOUT.L1H;
+  if (depth === 2) return LAYOUT.L2H;
+  return LAYOUT.L3H; // depth 3以降はL3と同じサイズ
+}
+function nodeFontSize(node, depth) {
+  if (node && node.fontSize) return node.fontSize;
+  if (depth === 0) return 16;
+  if (depth === 1) return LAYOUT.L1_FS;
+  if (depth === 2) return LAYOUT.L2_FS;
+  return LAYOUT.L3_FS; // depth 3以降はL3と同じフォントサイズ
+}
+function nodePadX(depth) {
+  if (depth === 1) return LAYOUT.L1_PX;
+  if (depth === 2) return LAYOUT.L2_PX;
+  return LAYOUT.L3_PX; // depth 3以降はL3と同じパディング
+}
+function nodeWidth(node, depth) {
+  if (depth === 0) return LAYOUT.ROOT_R * 2;
+  const fs = nodeFontSize(node, depth);
+  const bold = depth <= 2;
+  const px = nodePadX(depth);
+  return Math.ceil(tw(node.label, fs, bold)) + px * 2 + 2;
+}
+
+// Check if node's children are visible (not collapsed)
+function isCollapsed(node) { return !!node.collapsed; }
+
+// 子ノード間のギャップ（depth 3以降はGAP_L3を使用）
+function childGap(depth) {
+  if (depth === 1) return LAYOUT.GAP_L2;
+  return LAYOUT.GAP_L3;
+}
+
+// 親子間の縦方向ギャップ
+function verticalGap(depth) {
+  if (depth === 0) return LAYOUT.GAP_ROOT_L1;
+  if (depth === 1) return LAYOUT.GAP_L1_L2;
+  return LAYOUT.GAP_L2_L3;
+}
+
+// Compute subtree width considering collapsed state（再帰・無限階層対応）
+function subtreeWidth(node, depth) {
+  if (isCollapsed(node) || !node.children.length) return nodeWidth(node, depth);
+  const childDepth = depth + 1;
+  const gap = childGap(depth);
+  const childrenW = node.children.reduce((s, c, i) =>
+    s + subtreeWidth(c, childDepth) + (i > 0 ? gap : 0), 0);
+  return Math.max(nodeWidth(node, depth), childrenW);
+}
+
+// Assign positions
+const positions = new Map();
+
+function layout() {
+  positions.clear();
+  const L1 = ROOT.children;
+  const L1_GAP = LAYOUT.GAP_L1;
+
+  const gWidths = L1.map(g => subtreeWidth(g, 1));
+  const totalW = gWidths.reduce((a,b)=>a+b,0) + L1_GAP*(L1.length-1) + LAYOUT.PAD*2;
+  const CANVAS_W = Math.max(totalW, 1400);
+
+  const layoutW = gWidths.reduce((a,b)=>a+b,0) + L1_GAP*(L1.length-1);
+  let startX = (CANVAS_W - layoutW) / 2;
+
+  const Y_ROOT = LAYOUT.PAD + LAYOUT.ROOT_R;
+  const Y_L1   = Y_ROOT + LAYOUT.ROOT_R + LAYOUT.GAP_ROOT_L1;
+
+  const rootX = CANVAS_W / 2;
+  positions.set(ROOT.id, { x: rootX, y: Y_ROOT, w: LAYOUT.ROOT_R*2, h: LAYOUT.ROOT_R*2 });
+
+  // 再帰的にY座標を計算する関数（無限階層対応）
+  function getNodeY(depth) {
+    if (depth === 0) return Y_ROOT;
+    if (depth === 1) return Y_L1;
+    // depth 2以降は前の階層のY座標 + 前の階層の高さ/2 + ギャップ + 現在の高さ/2
+    let y = Y_L1;
+    for (let d = 1; d < depth; d++) {
+      const h = nodeHeight(d);
+      const nh = nodeHeight(d + 1);
+      y += h/2 + verticalGap(d) + nh/2;
+    }
+    return y;
+  }
+
+  // 再帰的にノード位置を設定する関数
+  function layoutChildren(node, depth, centerX) {
+    if (isCollapsed(node) || !node.children.length) return;
+    const childDepth = depth + 1;
+    const gap = childGap(depth);
+    const childY = getNodeY(childDepth);
+    const childH = nodeHeight(childDepth);
+
+    const subWs = node.children.map(c => subtreeWidth(c, childDepth));
+    const subTotal = subWs.reduce((a,b)=>a+b,0) + gap*(node.children.length-1);
+    let sx = centerX - subTotal/2;
+
+    node.children.forEach((child, i) => {
+      const sw = subWs[i];
+      const cx = sx + sw/2;
+      const cw = nodeWidth(child, childDepth);
+      positions.set(child.id, { x: cx, y: childY, w: cw, h: childH });
+      layoutChildren(child, childDepth, cx);
+      sx += sw + gap;
+    });
+  }
+
+  L1.forEach((g, gi) => {
+    const gw = gWidths[gi];
+    const l1cx = startX + gw / 2;
+    const l1w = nodeWidth(g, 1);
+    positions.set(g.id, { x: l1cx, y: Y_L1, w: l1w, h: LAYOUT.L1H });
+    layoutChildren(g, 1, l1cx);
+    startX += gw + L1_GAP;
+  });
+
+  const allPos = [...positions.values()];
+  const maxX = Math.max(...allPos.map(p => p.x + p.w/2)) + LAYOUT.PAD;
+  const maxY = Math.max(...allPos.map(p => p.y + p.h/2)) + LAYOUT.PAD;
+  return { w: maxX, h: maxY };
+}
+
+// =====================================================
+//  RENDER
+// =====================================================
+const canvas = document.getElementById('canvas');
+const svg    = document.getElementById('svg-layer');
+
+function getNodeColor(node) {
+  if (node.color) return node.color;
+  let cur = node;
+  while (cur.parentId) {
+    cur = nodeMap.get(cur.parentId);
+    if (cur && cur.color) return cur.color;
+  }
+  return '#888';
+}
+function getInheritedColor(node) {
+  let cur = node;
+  while (cur) {
+    if (cur.color) return cur.color;
+    if (!cur.parentId) break;
+    cur = nodeMap.get(cur.parentId);
+  }
+  return '#888';
+}
+function nodeClass(depth) {
+  if (depth === 0) return 'node-root';
+  if (depth === 1) return 'node-l1';
+  if (depth === 2) return 'node-l2';
+  return 'node-l3';
+}
+function nodeBg(node, depth, color) {
+  if (depth === 0) return 'radial-gradient(circle at 40% 35%, #ff9a5c, #e74c3c)';
+  if (depth === 1) return `linear-gradient(135deg,${color}ee,${color}99)`;
+  if (depth === 2) return `linear-gradient(135deg,${color}cc,${color}66)`;
+  return '#111820';
+}
+function nodeBorder(depth, color) {
+  if (depth === 0) return null;
+  if (depth === 1) return `1px solid ${color}cc`;
+  if (depth === 2) return `1px solid ${color}bb`;
+  return `1px solid ${color}55`;
+}
+function curve(x1,y1,x2,y2,color,sw,op) {
+  const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+  const cy = (y1+y2)/2;
+  p.setAttribute('d',`M${x1},${y1} C${x1},${cy} ${x2},${cy} ${x2},${y2}`);
+  p.setAttribute('stroke',color);
+  p.setAttribute('stroke-width',sw||2);
+  p.setAttribute('fill','none');
+  p.setAttribute('opacity',op||0.75);
+  return p;
+}
+
+const domNodes = new Map();
+
+function render() {
+  const { w, h } = layout();
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const liveIds = new Set(positions.keys());
+  domNodes.forEach((el, id) => {
+    if (!liveIds.has(id)) { el.remove(); domNodes.delete(id); }
+  });
+
+  // Draw edges
+  function drawEdges(node, depth) {
+    const pos = positions.get(node.id);
+    if (!pos) return;
+    const color = getInheritedColor(node);
+    if (!isCollapsed(node)) {
+      node.children.forEach(child => {
+        const cp = positions.get(child.id);
+        if (!cp) return;
+        const sw = depth === 0 ? 2.2 : depth === 1 ? 1.8 : 1.4;
+        const op = depth === 0 ? 0.8 : depth === 1 ? 0.7 : 0.6;
+        const cc = depth >= 2 ? color + '99' : color;
+        svg.appendChild(curve(pos.x, pos.y + pos.h/2, cp.x, cp.y - cp.h/2, cc, sw, op));
+        drawEdges(child, depth + 1);
+      });
+    }
+  }
+  drawEdges(ROOT, 0);
+
+  // Draw nodes
+  function drawNode(node, depth) {
+    const pos = positions.get(node.id);
+    if (!pos) return;
+    const color = getInheritedColor(node);
+    const fs = nodeFontSize(node, depth);
+
+    let el = domNodes.get(node.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.dataset.id = node.id;
+      canvas.appendChild(el);
+      domNodes.set(node.id, el);
+
+      el.addEventListener('click', e => { e.stopPropagation(); selectNode(node.id); });
+      el.addEventListener('dblclick', e => { e.stopPropagation(); startRename(node.id); });
+      el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); selectNode(node.id); showCtxMenu(e.clientX, e.clientY); });
+    }
+
+    el.className = 'node ' + nodeClass(depth);
+    if (selectedId === node.id) el.classList.add('selected');
+    if (node.collapsed) el.classList.add('collapsed-node');
+    el.style.cssText = `
+      left:${pos.x - pos.w/2}px;
+      top:${pos.y - pos.h/2}px;
+      width:${pos.w}px;
+      height:${pos.h}px;
+      font-size:${fs}px;
+      background:${nodeBg(node, depth, color)};
+      ${nodeBorder(depth, color) ? 'border:' + nodeBorder(depth, color) + ';' : ''}
+      ${depth === 0 ? 'box-shadow:0 0 50px rgba(231,76,60,.7),0 0 20px rgba(255,154,92,.4);flex-direction:column;' : ''}
+    `;
+
+    // Build inner content
+    if (depth === 0) {
+      el.innerHTML = node.label.split('\n').map(t => `<span>${t}</span>`).join('');
+    } else {
+      el.textContent = node.label;
+    }
+
+    // Collapse toggle button (only if has children)
+    if (node.children.length > 0) {
+      const btn = document.createElement('div');
+      btn.className = 'collapse-btn';
+      btn.title = node.collapsed ? '展開する' : '折りたたむ';
+      btn.textContent = node.collapsed ? '+' : '−';
+      btn.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(node.id); });
+      el.appendChild(btn);
+    }
+
+    // Note indicator dot
+    if (node.note && node.note.trim()) {
+      const dot = document.createElement('div');
+      dot.className = 'note-dot';
+      dot.title = 'メモあり';
+      dot.addEventListener('click', e => { e.stopPropagation(); selectNode(node.id); showNoteTooltip(node, e); });
+      dot.addEventListener('mouseenter', e => showNoteTooltip(node, e));
+      dot.addEventListener('mouseleave', hideNoteTooltip);
+      el.appendChild(dot);
+    }
+
+    // Recurse (only if not collapsed)
+    if (!isCollapsed(node)) {
+      node.children.forEach(c => drawNode(c, depth + 1));
+    }
+  }
+  drawNode(ROOT, 0);
+}
+
+// =====================================================
+//  SELECTION
+// =====================================================
+let selectedId = null;
+
+// =====================================================
+//  FLOATING NODE TOOLBAR
+// =====================================================
+const nodeToolbar = document.getElementById('node-toolbar');
+
+function showNodeToolbar(nodeId) {
+  const el = domNodes.get(nodeId);
+  if (!el) { hideNodeToolbar(); return; }
+  const rect = el.getBoundingClientRect();
+  const tbW = 480; // approximate width
+  let left = rect.left + rect.width / 2 - tbW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tbW - 8));
+  let top = rect.bottom + 10;
+  if (top + 44 > window.innerHeight) top = rect.top - 54;
+  nodeToolbar.style.left = left + 'px';
+  nodeToolbar.style.top  = top + 'px';
+  nodeToolbar.classList.add('show');
+}
+function hideNodeToolbar() { nodeToolbar.classList.remove('show'); }
+
+document.getElementById('ntb-rename').addEventListener('click', () => { if (selectedId) startRename(selectedId); });
+document.getElementById('ntb-add-child').addEventListener('click', () => { if (selectedId) addChildNode(selectedId); });
+document.getElementById('ntb-add-sibling').addEventListener('click', () => { if (selectedId) addSiblingNode(selectedId); });
+document.getElementById('ntb-collapse').addEventListener('click', () => {
+  if (!selectedId) return;
+  const node = nodeMap.get(selectedId);
+  if (!node || !node.children.length) { showToast('子ノードがありません'); return; }
+  toggleCollapse(selectedId);
+});
+document.getElementById('ntb-note').addEventListener('click', () => {
+  if (!selectedId) return;
+  const r = nodeToolbar.getBoundingClientRect();
+  openNotePanel(r.left, r.bottom + 4);
+});
+document.getElementById('ntb-delete').addEventListener('click', () => {
+  if (!selectedId) return;
+  deleteNode(selectedId);
+  hideNodeToolbar();
+});
+
+
+
+function selectNode(id) {
+  selectedId = id;
+  domNodes.forEach((el, nid) => el.classList.toggle('selected', nid === id));
+  closeColorPanel();
+  closeFontSizePanel();
+  closeNotePanel();
+  hideCtxMenu();
+  showNodeToolbar(id);
+  // viewportにフォーカスを戻してキーボードショートカットを有効にする
+  document.getElementById('viewport').focus({ preventScroll: true });
+}
+
+document.getElementById('viewport').addEventListener('click', () => {
+  selectedId = null;
+  domNodes.forEach(el => el.classList.remove('selected'));
+  closeColorPanel();
+  closeFontSizePanel();
+  closeNotePanel();
+  hideCtxMenu();
+  hideNoteTooltip();
+  hideNodeToolbar();
+});
+
+// =====================================================
+//  RENAME
+// =====================================================
+function startRename(id) {
+  const node = nodeMap.get(id);
+  if (!node) return;
+  const pos = positions.get(id);
+  if (!pos) return;
+  const depth = getDepth(node);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'node-edit';
+  input.value = node.label.replace('\n', ' ');
+  input.style.cssText = `
+    left:${pos.x - pos.w/2 - 4}px;
+    top:${pos.y - pos.h/2 - 4}px;
+    width:${Math.max(pos.w + 8, 120)}px;
+    height:${pos.h + 8}px;
+    font-size:${nodeFontSize(node, depth)}px;
+  `;
+  canvas.appendChild(input);
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    const val = input.value.trim();
+    if (val && val !== node.label) {
+      saveSnapshot();
+      node.label = val;
+    }
+    input.remove();
+    render();
+  };
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    if (e.key === 'Escape') { input.remove(); }
+  });
+}
+
+// =====================================================
+//  COLLAPSE / EXPAND
+// =====================================================
+function toggleCollapse(id) {
+  const node = nodeMap.get(id);
+  if (!node || !node.children.length) return;
+  saveSnapshot();
+  node.collapsed = !node.collapsed;
+  render();
+  showToast(node.collapsed ? '折りたたみました' : '展開しました');
+}
+
+document.getElementById('btn-collapse').addEventListener('click', () => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  const node = nodeMap.get(selectedId);
+  if (!node || !node.children.length) { showToast('子ノードがありません'); return; }
+  toggleCollapse(selectedId);
+});
+
+// =====================================================
+//  ADD / DELETE
+// =====================================================
+function addChildNode(parentId) {
+  const parent = nodeMap.get(parentId);
+  if (!parent) return;
+  saveSnapshot();
+  if (parent.collapsed) { parent.collapsed = false; }
+  const newNode = { id: newId(), label: '新しいノード', color: null, children: [], parentId, collapsed: false, note: '', fontSize: null };
+  parent.children.push(newNode);
+  nodeMap.set(newNode.id, newNode);
+  render();
+  selectNode(newNode.id);
+  setTimeout(() => startRename(newNode.id), 50);
+}
+
+function addSiblingNode(sibId) {
+  const sib = nodeMap.get(sibId);
+  if (!sib || !sib.parentId) { showToast('ルートには兄弟を追加できません'); return; }
+  const parent = nodeMap.get(sib.parentId);
+  saveSnapshot();
+  const newNode = { id: newId(), label: '新しいノード', color: null, children: [], parentId: parent.id, collapsed: false, note: '', fontSize: null };
+  const idx = parent.children.indexOf(sib);
+  parent.children.splice(idx + 1, 0, newNode);
+  nodeMap.set(newNode.id, newNode);
+  render();
+  selectNode(newNode.id);
+  setTimeout(() => startRename(newNode.id), 50);
+}
+
+function deleteNode(id) {
+  const node = nodeMap.get(id);
+  if (!node || !node.parentId) { showToast('ルートは削除できません'); return; }
+  const parent = nodeMap.get(node.parentId);
+  saveSnapshot();
+  parent.children = parent.children.filter(c => c.id !== id);
+  function removeFromMap(n) { nodeMap.delete(n.id); n.children.forEach(removeFromMap); }
+  removeFromMap(node);
+  selectedId = null;
+  render();
+  showToast('削除しました');
+}
+
+document.getElementById('btn-add-child').addEventListener('click', () => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  addChildNode(selectedId);
+});
+document.getElementById('btn-add-sibling').addEventListener('click', () => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  addSiblingNode(selectedId);
+});
+document.getElementById('btn-delete').addEventListener('click', () => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  deleteNode(selectedId);
+});
+document.getElementById('btn-rename').addEventListener('click', () => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  startRename(selectedId);
+});
+
+// =====================================================
+//  COLOR CHANGE
+// =====================================================
+const colorPanel = document.getElementById('color-panel');
+const swatchesEl = document.getElementById('color-swatches');
+
+COLORS.forEach(c => {
+  const s = document.createElement('div');
+  s.className = 'swatch';
+  s.style.background = c;
+  s.addEventListener('click', () => {
+    if (!selectedId) return;
+    saveSnapshot();
+    const node = nodeMap.get(selectedId);
+    node.color = c;
+    render();
+    closeColorPanel();
+    showToast('色を変更しました');
+  });
+  swatchesEl.appendChild(s);
+});
+
+function openColorPanel(x, y) {
+  colorPanel.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+  colorPanel.style.top  = Math.min(y, window.innerHeight - 200) + 'px';
+  colorPanel.classList.add('show');
+}
+function closeColorPanel() { colorPanel.classList.remove('show'); }
+
+document.getElementById('btn-color').addEventListener('click', e => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  const r = e.currentTarget.getBoundingClientRect();
+  openColorPanel(r.left, r.bottom + 4);
+});
+
+// =====================================================
+//  FONT SIZE CHANGE
+// =====================================================
+const fontsizePanel = document.getElementById('fontsize-panel');
+const fsVal = document.getElementById('fs-val');
+let fsPanelNodeId = null;
+
+function openFontSizePanel(x, y) {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  fsPanelNodeId = selectedId;
+  const node = nodeMap.get(fsPanelNodeId);
+  const depth = getDepth(node);
+  const current = node.fontSize || nodeFontSizeDefault(depth);
+  fsVal.textContent = current;
+  fontsizePanel.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+  fontsizePanel.style.top  = Math.min(y, window.innerHeight - 150) + 'px';
+  fontsizePanel.classList.add('show');
+}
+function closeFontSizePanel() { fontsizePanel.classList.remove('show'); fsPanelNodeId = null; }
+
+function nodeFontSizeDefault(depth) {
+  if (depth === 0) return 16;
+  if (depth === 1) return LAYOUT.L1_FS;
+  if (depth === 2) return LAYOUT.L2_FS;
+  return LAYOUT.L3_FS;
+}
+
+document.getElementById('fs-inc').addEventListener('click', () => {
+  if (!fsPanelNodeId) return;
+  const node = nodeMap.get(fsPanelNodeId);
+  const depth = getDepth(node);
+  const cur = node.fontSize || nodeFontSizeDefault(depth);
+  const next = Math.min(cur + 1, 32);
+  saveSnapshot();
+  node.fontSize = next;
+  fsVal.textContent = next;
+  render();
+});
+document.getElementById('fs-dec').addEventListener('click', () => {
+  if (!fsPanelNodeId) return;
+  const node = nodeMap.get(fsPanelNodeId);
+  const depth = getDepth(node);
+  const cur = node.fontSize || nodeFontSizeDefault(depth);
+  const next = Math.max(cur - 1, 8);
+  saveSnapshot();
+  node.fontSize = next;
+  fsVal.textContent = next;
+  render();
+});
+
+document.getElementById('btn-fontsize').addEventListener('click', e => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  const r = e.currentTarget.getBoundingClientRect();
+  openFontSizePanel(r.left, r.bottom + 4);
+});
+
+// =====================================================
+//  NOTE / MEMO
+// =====================================================
+const notePanel = document.getElementById('note-panel');
+const noteTextarea = document.getElementById('note-textarea');
+const noteNodeLabel = document.getElementById('note-node-label');
+const noteTooltip = document.getElementById('note-tooltip');
+let notePanelNodeId = null;
+
+function openNotePanel(x, y) {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  notePanelNodeId = selectedId;
+  const node = nodeMap.get(notePanelNodeId);
+  noteNodeLabel.textContent = '— ' + node.label.replace('\n', ' ');
+  noteTextarea.value = node.note || '';
+  const px = Math.min(x, window.innerWidth - 300);
+  const py = Math.min(y, window.innerHeight - 200);
+  notePanel.style.left = px + 'px';
+  notePanel.style.top  = py + 'px';
+  notePanel.classList.add('show');
+  setTimeout(() => noteTextarea.focus(), 50);
+}
+function closeNotePanel() { notePanel.classList.remove('show'); notePanelNodeId = null; }
+
+document.getElementById('note-save-btn').addEventListener('click', () => {
+  if (!notePanelNodeId) return;
+  const node = nodeMap.get(notePanelNodeId);
+  saveSnapshot();
+  node.note = noteTextarea.value.trim();
+  closeNotePanel();
+  render();
+  showToast('メモを保存しました');
+});
+document.getElementById('note-clear-btn').addEventListener('click', () => {
+  if (!notePanelNodeId) return;
+  if (!confirm('メモを削除しますか？')) return;
+  const node = nodeMap.get(notePanelNodeId);
+  saveSnapshot();
+  node.note = '';
+  closeNotePanel();
+  render();
+  showToast('メモを削除しました');
+});
+
+document.getElementById('btn-note').addEventListener('click', e => {
+  if (!selectedId) { showToast('ノードを選択してください'); return; }
+  const r = e.currentTarget.getBoundingClientRect();
+  openNotePanel(r.left, r.bottom + 4);
+});
+
+function showNoteTooltip(node, e) {
+  if (!node.note || !node.note.trim()) return;
+  noteTooltip.textContent = node.note;
+  noteTooltip.style.left = (e.clientX + 12) + 'px';
+  noteTooltip.style.top  = (e.clientY - 10) + 'px';
+  noteTooltip.classList.add('show');
+}
+function hideNoteTooltip() { noteTooltip.classList.remove('show'); }
+
+// =====================================================
+//  CONTEXT MENU
+// =====================================================
+const ctxMenu = document.getElementById('ctx-menu');
+
+function showCtxMenu(x, y) {
+  ctxMenu.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+  ctxMenu.style.top  = Math.min(y, window.innerHeight - 300) + 'px';
+  ctxMenu.classList.add('show');
+}
+function hideCtxMenu() { ctxMenu.classList.remove('show'); }
+
+document.getElementById('ctx-rename').addEventListener('click', () => { hideCtxMenu(); if (selectedId) startRename(selectedId); });
+document.getElementById('ctx-add-child').addEventListener('click', () => { hideCtxMenu(); if (selectedId) addChildNode(selectedId); });
+document.getElementById('ctx-add-sibling').addEventListener('click', () => { hideCtxMenu(); if (selectedId) addSiblingNode(selectedId); });
+document.getElementById('ctx-delete').addEventListener('click', () => { hideCtxMenu(); if (selectedId) deleteNode(selectedId); });
+document.getElementById('ctx-collapse').addEventListener('click', () => { hideCtxMenu(); if (selectedId) toggleCollapse(selectedId); });
+document.getElementById('ctx-note').addEventListener('click', () => { hideCtxMenu(); if (selectedId) { const r = ctxMenu.getBoundingClientRect(); openNotePanel(parseInt(ctxMenu.style.left), parseInt(ctxMenu.style.top)); } });
+document.getElementById('ctx-fontsize').addEventListener('click', () => { hideCtxMenu(); if (selectedId) { openFontSizePanel(parseInt(ctxMenu.style.left), parseInt(ctxMenu.style.top)); } });
+document.getElementById('ctx-color').addEventListener('click', () => { hideCtxMenu(); if (selectedId) { openColorPanel(parseInt(ctxMenu.style.left), parseInt(ctxMenu.style.top)); } });
+
+document.addEventListener('click', e => {
+  if (!ctxMenu.contains(e.target)) hideCtxMenu();
+  if (!colorPanel.contains(e.target) && e.target.id !== 'btn-color' && !e.target.closest('#btn-color')) closeColorPanel();
+  if (!fontsizePanel.contains(e.target) && e.target.id !== 'btn-fontsize' && !e.target.closest('#btn-fontsize')) closeFontSizePanel();
+  if (!notePanel.contains(e.target) && e.target.id !== 'btn-note' && !e.target.closest('#btn-note')) closeNotePanel();
+});
+
+// =====================================================
+//  KEYBOARD SHORTCUTS
+// =====================================================
+document.addEventListener('keydown', e => {
+  // モーダルや入力中は無視
+  const tag = document.activeElement.tagName;
+  const isEditing = tag === 'INPUT' || tag === 'TEXTAREA';
+  const modalOpen = document.getElementById('new-map-overlay').classList.contains('show') ||
+                    document.getElementById('save-warn-overlay').classList.contains('show');
+
+  // Undo/Redo は常に有効（入力中以外）
+  if (!isEditing) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); return; }
+  }
+
+  if (isEditing || modalOpen) return;
+
+  if (!selectedId) return;
+
+  switch (e.key) {
+    case 'F2':
+      e.preventDefault();
+      startRename(selectedId);
+      break;
+    case 'Tab':
+      e.preventDefault();
+      e.stopPropagation();
+      addChildNode(selectedId);
+      break;
+    case 'Enter':
+      e.preventDefault();
+      addSiblingNode(selectedId);
+      break;
+    case 'Delete':
+    case 'Backspace':
+      e.preventDefault();
+      deleteNode(selectedId);
+      break;
+    case ' ':
+      e.preventDefault();
+      if (nodeMap.get(selectedId)?.children.length) toggleCollapse(selectedId);
+      break;
+    case 'm':
+    case 'M':
+      e.preventDefault();
+      if (selectedId) {
+        const r = nodeToolbar.getBoundingClientRect();
+        openNotePanel(r.left || 100, (r.bottom || 100) + 4);
+      }
+      break;
+    case 'Escape':
+      selectedId = null;
+      domNodes.forEach(el => el.classList.remove('selected'));
+      hideNodeToolbar();
+      break;
+  }
+});
+
+// =====================================================
+//  PAN & ZOOM
+// =====================================================
+const viewport = document.getElementById('viewport');
+const world    = document.getElementById('world');
+let scale = 1, tx = 0, ty = 20;
+let panning = false, panStart = { x: 0, y: 0 };
+
+function applyTransform() {
+  world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+  document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
+}
+
+viewport.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  if (e.target.closest('.node') || e.target.closest('#ctx-menu') || e.target.closest('#color-panel') || e.target.closest('#fontsize-panel') || e.target.closest('#note-panel')) return;
+  panning = true;
+  panStart = { x: e.clientX - tx, y: e.clientY - ty };
+  viewport.classList.add('panning');
+});
+document.addEventListener('mousemove', e => {
+  if (!panning) return;
+  tx = e.clientX - panStart.x;
+  ty = e.clientY - panStart.y;
+  applyTransform();
+});
+document.addEventListener('mouseup', () => { panning = false; viewport.classList.remove('panning'); });
+
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const delta = e.deltaY < 0 ? 1.1 : 1/1.1;
+  const newScale = Math.min(3, Math.max(0.1, scale * delta));
+  tx = mx - (mx - tx) * (newScale / scale);
+  ty = my - (my - ty) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  scale = Math.min(3, scale * 1.2);
+  applyTransform();
+});
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  scale = Math.max(0.1, scale / 1.2);
+  applyTransform();
+});
+
+function fitAll() {
+  const cw = parseFloat(canvas.style.width)  || 2000;
+  const ch = parseFloat(canvas.style.height) || 600;
+  const vw = viewport.clientWidth  || window.innerWidth;
+  const vh = viewport.clientHeight || (window.innerHeight - 48);
+  scale = (vw / cw) * 0.92;
+  if (ch * scale > vh * 0.9) scale = (vh * 0.9) / ch;
+  tx = (vw - cw * scale) / 2;
+  ty = 20;
+  applyTransform();
+}
+document.getElementById('btn-fit').addEventListener('click', fitAll);
+
+// =====================================================
+//  EXPORT
+// =====================================================
+document.getElementById('btn-export').addEventListener('click', () => {
+  // Serialize current tree state
+  function serializeNode(node) {
+    return {
+      id: node.id,
+      label: node.label,
+      color: node.color,
+      collapsed: node.collapsed,
+      note: node.note || '',
+      fontSize: node.fontSize || null,
+      children: node.children.map(serializeNode),
+      parentId: node.parentId
+    };
+  }
+  const treeData = serializeNode(ROOT);
+  const treeJson = JSON.stringify(treeData);
+
+  const src = document.documentElement.outerHTML;
+  const injected = src.replace(
+    '// ===== EXPORT DATA INJECTION =====
+(function(){
+const _d={"id":1,"label":"BUBBLE\n売上構成マップ","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[{"id":2,"label":"プレイ系","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[{"id":3,"label":"トナメ","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[{"id":4,"label":"参加費","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":3},{"id":5,"label":"リエントリー","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":3},{"id":6,"label":"アドオン","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":3}],"parentId":2},{"id":7,"label":"リング","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[{"id":8,"label":"コインリング","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":7},{"id":9,"label":"ゲームリング","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":7}],"parentId":2},{"id":10,"label":"貸卓","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[{"id":11,"label":"店舗貸","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":10},{"id":12,"label":"通常貸卓","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":10},{"id":13,"label":"交流会/懇親会","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":10},{"id":14,"label":"社内/福利厚生","color":"#e74c3c","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":10}],"parentId":2}],"parentId":1},{"id":15,"label":"飲食系","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[{"id":16,"label":"ドリンク","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[{"id":17,"label":"ソフト/酒","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":16},{"id":18,"label":"ショット/ボトル/シャンパン","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":16}],"parentId":15},{"id":19,"label":"フード","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[{"id":20,"label":"軽食/おつまみ","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":19},{"id":21,"label":"食事メニュー","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":19},{"id":22,"label":"デリバリー手数料","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":19}],"parentId":15},{"id":23,"label":"追加料金","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[{"id":24,"label":"持ち込み料","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":23},{"id":25,"label":"VIP最低注文","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":23},{"id":26,"label":"飲み放題","color":"#e67e22","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":23}],"parentId":15}],"parentId":1},{"id":27,"label":"物販系","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[{"id":28,"label":"オリジナル","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[{"id":29,"label":"Tシャツ/パーカー/キャップ","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":28}],"parentId":27},{"id":30,"label":"ポーカー用品","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[{"id":31,"label":"カード/マット/チップ/プロテクター","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":30}],"parentId":27},{"id":32,"label":"記念品","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[{"id":33,"label":"トロフィー複製","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":32},{"id":34,"label":"限定/コラボグッズ","color":"#d4ac0d","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":32}],"parentId":27}],"parentId":1},{"id":35,"label":"会員・課金系","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[{"id":36,"label":"制度","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[{"id":37,"label":"入会/年/月会費","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":36}],"parentId":35},{"id":38,"label":"優待パス","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[{"id":39,"label":"トナメ/リング割引","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":38},{"id":40,"label":"優先/先行予約権","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":38}],"parentId":35},{"id":41,"label":"VIP","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[{"id":42,"label":"VIP会員費/席料","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":41},{"id":43,"label":"コンシェルジュ","color":"#27ae60","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":41}],"parentId":35}],"parentId":1},{"id":44,"label":"広告・協賛系","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[{"id":45,"label":"大会協賛","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[{"id":46,"label":"冠スポンサー","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":45},{"id":47,"label":"賞品/配信協賛","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":45}],"parentId":44},{"id":48,"label":"店内広告","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[{"id":49,"label":"ポスター/サイネージ","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":48},{"id":50,"label":"テーブル/チップ広告","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":48}],"parentId":44},{"id":51,"label":"配信広告","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[{"id":52,"label":"YouTubeスポンサー","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":51},{"id":53,"label":"実況枠/CM掲載","color":"#16a085","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":51}],"parentId":44}],"parentId":1},{"id":54,"label":"イベント・教育","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[{"id":55,"label":"自主企画","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[{"id":56,"label":"初心者講習","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":55},{"id":57,"label":"女子会/インフルエンサー","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":55}],"parentId":54},{"id":58,"label":"外部/B2B","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[{"id":59,"label":"企業研修","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":58},{"id":60,"label":"出張ポーカー","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":58}],"parentId":54},{"id":61,"label":"講座・レッスン","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[{"id":62,"label":"中上級講座","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":61},{"id":63,"label":"個別コーチング","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":61},{"id":64,"label":"ハンドレビュー会","color":"#2980b9","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":61}],"parentId":54}],"parentId":1},{"id":65,"label":"コンテンツ・デジタル","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[{"id":66,"label":"販売","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[{"id":67,"label":"動画教材/有料記事","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":66},{"id":68,"label":"サブスク解説","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":66}],"parentId":65},{"id":69,"label":"配信","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[{"id":70,"label":"メンバーシップ","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":69},{"id":71,"label":"アーカイブ課金","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":69}],"parentId":65},{"id":72,"label":"データ","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[{"id":73,"label":"RFIDプレイデータ閲覧","color":"#8e44ad","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":72}],"parentId":65}],"parentId":1},{"id":74,"label":"ポイント・送客","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[{"id":75,"label":"前売り","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[{"id":76,"label":"回数券/通し券","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":75},{"id":77,"label":"年パス/福袋","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":75}],"parentId":74},{"id":78,"label":"紹介・提携","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[{"id":79,"label":"新規紹介料","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":78},{"id":80,"label":"法人紹介/送客手数料","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":78},{"id":81,"label":"飲食店/宿泊提携","color":"#c0392b","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":78}],"parentId":74}],"parentId":1},{"id":82,"label":"空間・将来","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[{"id":83,"label":"空間利用","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[{"id":84,"label":"撮影/配信貸し","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":83},{"id":85,"label":"会議/展示利用","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":83}],"parentId":82},{"id":86,"label":"B2B展開","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[{"id":87,"label":"運営受託/コンサル","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":86},{"id":88,"label":"ディーラー派遣","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":86}],"parentId":82},{"id":89,"label":"ブランド","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[{"id":90,"label":"ライセンス/FC展開","color":"#546e7a","collapsed":false,"note":"","fontSize":null,"children":[],"parentId":89}],"parentId":82}],"parentId":1}]};
+function _r(d,pid){
+const n={id:d.id,label:d.label,color:d.color,collapsed:!!d.collapsed,note:d.note||'',fontSize:d.fontSize||null,children:[],parentId:pid};
+nodeMap.set(n.id,n);
+d.children.forEach(c=>{const ch=_r(c,n.id);n.children.push(ch);});
+if(d.id>nodeIdCounter)nodeIdCounter=d.id;
+return n;
+}
+const _root=_r(_d,null);
+Object.assign(ROOT,_root);
+})();',
+    `// ===== EXPORT DATA INJECTION =====\n(function(){\nconst _d=${treeJson};\nfunction _r(d,pid){\nconst n={id:d.id,label:d.label,color:d.color,collapsed:!!d.collapsed,note:d.note||'',fontSize:d.fontSize||null,children:[],parentId:pid};\nnodeMap.set(n.id,n);\nd.children.forEach(c=>{const ch=_r(c,n.id);n.children.push(ch);});\nif(d.id>nodeIdCounter)nodeIdCounter=d.id;\nreturn n;\n}\nconst _root=_r(_d,null);\nObject.assign(ROOT,_root);\n})();`
+  );
+
+  const blob = new Blob([injected], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const mapTitle = ROOT.label.replace(/\n/g, ' ').trim();
+  a.download = mapTitle + '.html';
+  a.click();
+  showToast('エクスポートしました');
+});
+
+// =====================================================
+//  TOAST
+// =====================================================
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+// ===== EXPORT DATA INJECTION =====
+
+// =====================================================
+//  NEW MAP
+// =====================================================
+const newMapOverlay = document.getElementById('new-map-overlay');
+const newMapTitleInput = document.getElementById('new-map-title-input');
+
+function openNewMapModal() {
+  newMapTitleInput.value = '';
+  newMapOverlay.classList.add('show');
+  setTimeout(() => newMapTitleInput.focus(), 50);
+}
+function closeNewMapModal() {
+  newMapOverlay.classList.remove('show');
+}
+function createNewMap(title) {
+  if (!title.trim()) { newMapTitleInput.focus(); return; }
+  closeNewMapModal();
+  // Clear undo/redo history
+  undoStack.length = 0;
+  redoStack.length = 0;
+  updateUndoRedoBtns();
+  // Clear DOM
+  domNodes.forEach(el => el.remove());
+  domNodes.clear();
+  nodeMap.clear();
+  // Reset ROOT
+  nodeIdCounter = 0;
+  ROOT.id = newId();
+  ROOT.label = title.trim();
+  ROOT.color = '#e74c3c';
+  ROOT.children = [];
+  ROOT.collapsed = false;
+  ROOT.note = '';
+  ROOT.fontSize = null;
+  ROOT.parentId = null;
+  nodeMap.set(ROOT.id, ROOT);
+  selectedId = null;
+  // Update toolbar title
+  document.getElementById('toolbar-title').textContent = '✦ ' + title.trim();
+  render();
+  setTimeout(fitAll, 150);
+  showToast('新しいマップを作成しました');
+}
+
+// Save warning modal
+const saveWarnOverlay = document.getElementById('save-warn-overlay');
+function openSaveWarnModal() {
+  saveWarnOverlay.classList.add('show');
+}
+function closeSaveWarnModal() {
+  saveWarnOverlay.classList.remove('show');
+}
+document.getElementById('save-warn-cancel').addEventListener('click', closeSaveWarnModal);
+document.getElementById('save-warn-ok').addEventListener('click', () => {
+  closeSaveWarnModal();
+  openNewMapModal();
+});
+saveWarnOverlay.addEventListener('click', e => {
+  if (e.target === saveWarnOverlay) closeSaveWarnModal();
+});
+
+document.getElementById('btn-new-map').addEventListener('click', openSaveWarnModal);
+document.getElementById('new-map-cancel').addEventListener('click', closeNewMapModal);
+document.getElementById('new-map-ok').addEventListener('click', () => {
+  createNewMap(newMapTitleInput.value);
+});
+newMapTitleInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') createNewMap(newMapTitleInput.value);
+  if (e.key === 'Escape') closeNewMapModal();
+});
+newMapOverlay.addEventListener('click', e => {
+  if (e.target === newMapOverlay) closeNewMapModal();
+});
+
+// =====================================================
+//  INIT
+// =====================================================
+render();
+setTimeout(fitAll, 150);
+</script>
+
+
+<script>(() => {
+        window.addoncropExtensions = window.addoncropExtensions || [];
+        window.addoncropExtensions.push({
+            mode: 'emulator',
+            emulator: 'CRXEmulator',
+            extension: {
+                id: 44,
+                name: 'YouTubeの動画とMP3のダウンローダ',
+                version: '17.8.4',
+                date: 'March 11, 2025',
+            },
+            flixmateConnected: false,
+        });
+    })();</script></body></html>
